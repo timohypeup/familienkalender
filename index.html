@@ -190,8 +190,6 @@
     /* Zeitbasierte Events — absolute Positionierung */
     .event-timed {
       position: absolute;
-      left: 3px;
-      right: 3px;
       z-index: 2;
       min-height: 1.4rem;
     }
@@ -547,19 +545,55 @@ function render(allEvents, now) {
       html += `<div class="time-line" style="top:${pct}%"></div>`;
     }
 
-    // Events proportional positionieren
-    const dayStartTime = new Date(day); dayStartTime.setHours(DAY_START_H, 0, 0, 0);
-    const dayEndTime = new Date(day); dayEndTime.setHours(DAY_END_H, 0, 0, 0);
-
-    for (const ev of dayData[i].timedEvents) {
-      // Start/Ende auf sichtbaren Bereich klemmen
+    // Events proportional positionieren mit Overlap-Handling
+    const timedEvs = dayData[i].timedEvents.map(ev => {
       const evStartH = Math.max(DAY_START_H, ev.start.getHours() + ev.start.getMinutes() / 60);
       const evEndH = Math.min(DAY_END_H, ev.end.getHours() + ev.end.getMinutes() / 60 + (ev.end.getDate() !== day.getDate() ? 24 : 0));
+      return { ...ev, startH: evStartH, endH: evEndH };
+    });
 
-      const topPct = hourToPercent(evStartH);
-      const heightPct = Math.max(2, hourToPercent(evEndH) - topPct);
+    // Overlap-Gruppen bilden: Events die sich zeitlich ueberschneiden
+    const groups = [];
+    for (const ev of timedEvs) {
+      let placed = false;
+      for (const group of groups) {
+        if (ev.startH < group.end) {
+          group.events.push(ev);
+          group.end = Math.max(group.end, ev.endH);
+          placed = true;
+          break;
+        }
+      }
+      if (!placed) {
+        groups.push({ events: [ev], end: ev.endH });
+      }
+    }
 
-      html += `<div class="event event-timed" style="background:${ev.color};top:${topPct}%;height:${heightPct}%">`;
+    // Spalten innerhalb jeder Gruppe zuweisen
+    for (const group of groups) {
+      const columns = [];
+      for (const ev of group.events) {
+        let col = 0;
+        while (columns[col] && columns[col] > ev.startH) {
+          col++;
+        }
+        ev._col = col;
+        columns[col] = ev.endH;
+      }
+      const totalCols = columns.length;
+      for (const ev of group.events) {
+        ev._totalCols = totalCols;
+      }
+    }
+
+    for (const ev of timedEvs) {
+      const topPct = hourToPercent(ev.startH);
+      const heightPct = Math.max(2, hourToPercent(ev.endH) - topPct);
+      const colWidth = (100 - 4) / ev._totalCols; // 4% padding gesamt
+      const leftPct = 2 + ev._col * colWidth;
+      const widthPct = colWidth - 1;
+
+      html += `<div class="event event-timed" style="background:${ev.color};top:${topPct}%;height:${heightPct}%;left:${leftPct}%;width:${widthPct}%">`;
       html += `<div class="event-time">${formatTime(ev.start)} – ${formatTime(ev.end)}</div>`;
       html += `<div class="event-title">${escapeHtml(ev.title)}</div>`;
       html += '</div>';
