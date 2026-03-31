@@ -1,0 +1,539 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Familienkalender</title>
+  <style>
+    /* ========================================================
+       FAMILIENKALENDER — optimiert fuer Echo Show 15
+       ======================================================== */
+
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+
+    html, body {
+      height: 100%;
+      overflow: hidden;
+      font-family: -apple-system, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+      background: #ffffff;
+      color: #000000;
+    }
+
+    .calendar {
+      display: flex;
+      flex-direction: column;
+      height: 100vh;
+      padding: 1rem 1.2rem;
+    }
+
+    /* --- Header --- */
+    .header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding-bottom: 0.8rem;
+      border-bottom: 2px solid #e0e0e0;
+      margin-bottom: 0.8rem;
+      flex-shrink: 0;
+    }
+
+    .header-title {
+      font-size: 2rem;
+      font-weight: 700;
+      letter-spacing: 0.02em;
+    }
+
+    .header-week {
+      font-size: 1.3rem;
+      opacity: 0.7;
+    }
+
+    .header-right {
+      display: flex;
+      align-items: center;
+      gap: 1.5rem;
+    }
+
+    .legend {
+      display: flex;
+      gap: 1.2rem;
+      font-size: 1.1rem;
+    }
+
+    .legend-item {
+      display: flex;
+      align-items: center;
+      gap: 0.4rem;
+    }
+
+    .legend-dot {
+      width: 14px;
+      height: 14px;
+      border-radius: 50%;
+      flex-shrink: 0;
+    }
+
+    .clock {
+      font-size: 1.8rem;
+      font-weight: 600;
+      font-variant-numeric: tabular-nums;
+    }
+
+    /* --- Wochentage-Grid --- */
+    .week-grid {
+      display: grid;
+      grid-template-columns: repeat(7, 1fr);
+      gap: 0.6rem;
+      flex: 1;
+      min-height: 0;
+    }
+
+    .day-column {
+      display: flex;
+      flex-direction: column;
+      background: #f5f5f5;
+      border-radius: 10px;
+      overflow: hidden;
+    }
+
+    .day-column.today {
+      outline: 3px solid #e94560;
+      outline-offset: -1px;
+    }
+
+    .day-header {
+      text-align: center;
+      padding: 0.6rem 0.4rem;
+      background: rgba(0,0,0,0.05);
+      flex-shrink: 0;
+    }
+
+    .day-name {
+      font-size: 1.5rem;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+    }
+
+    .day-column.today .day-name {
+      color: #e94560;
+    }
+
+    .day-date {
+      font-size: 1.1rem;
+      opacity: 0.6;
+      margin-top: 0.15rem;
+    }
+
+    .day-events {
+      flex: 1;
+      overflow: hidden;
+      padding: 0.4rem;
+      display: flex;
+      flex-direction: column;
+      gap: 0.35rem;
+    }
+
+    /* --- Events --- */
+    .event {
+      border-radius: 6px;
+      padding: 0.4rem 0.5rem;
+      font-size: 1.05rem;
+      line-height: 1.3;
+      flex-shrink: 0;
+    }
+
+    .event-time {
+      font-size: 0.85rem;
+      opacity: 0.8;
+      font-weight: 600;
+    }
+
+    .event-title {
+      font-weight: 500;
+      word-break: break-word;
+    }
+
+    .event.all-day {
+      font-weight: 600;
+      text-align: center;
+    }
+
+    /* --- Ladescreen / Fehler --- */
+    .loading, .error {
+      position: fixed;
+      inset: 0;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 2rem;
+      background: #ffffff;
+      z-index: 10;
+    }
+
+    .error {
+      color: #e94560;
+      flex-direction: column;
+      gap: 1rem;
+    }
+
+    .error-detail {
+      font-size: 1rem;
+      opacity: 0.7;
+      max-width: 80%;
+      text-align: center;
+    }
+
+    .overflow-hint {
+      font-size: 0.8rem;
+      opacity: 0.5;
+      text-align: center;
+      padding: 0.2rem;
+    }
+  </style>
+</head>
+<body>
+
+<div class="loading" id="loading">Kalender wird geladen…</div>
+<div class="calendar" id="calendar" style="display:none"></div>
+
+<script src="https://cdn.jsdelivr.net/npm/ical.js@1.5.0/build/ical.min.js"></script>
+<script>
+// ============================================================
+// KONFIGURATION — hier anpassen
+// ============================================================
+const CONFIG = {
+  // Kalender-Feeds: Name, ICS-URL und Farbe pro Kalender
+  CALENDARS: [
+    {
+      name: 'Platin & Timo',
+      url: 'https://p152-caldav.icloud.com/published/2/MTM0MDAzMzM3MTEzNDAwMxwNOsUmawPH-FkSXm4U6edWYiZU32acENiHbBZPg3k8',
+      color: '#3b82f6'
+    },
+    {
+      name: 'Naya',
+      url: 'https://p152-caldav.icloud.com/published/2/MTM0MDAzMzM3MTEzNDAwMxwNOsUmawPH-FkSXm4U6ed_3Q3enpwPWlcbZ4_UdjRwJCiYx1s_VPfAMyLYlPwEtpixCPwDTlQekz3SDm4-Ack',
+      color: '#67d4f1'
+    },
+    {
+      name: 'DJ Bookings Timo',
+      url: 'https://calendar.google.com/calendar/ical/hi%40stinson.media/private-7a505876fe5bd452939118e1a50c98b8/basic.ics',
+      color: '#a855f7'
+    }
+  ],
+
+  // CORS-Proxy — iCloud/Google blockieren direkte Browser-Requests.
+  // Eigenen Cloudflare Worker deployen (siehe worker.js + README.md).
+  // Format: Worker-URL + '?url=' → die ICS-URL wird als Parameter angehaengt.
+  CORS_PROXY: 'https://kalender-proxy.hi-679.workers.dev/?url=',
+
+  // Wochenstart: 0 = Sonntag, 1 = Montag
+  WEEK_START: 1,
+
+  // Seite alle 4 Minuten neu laden (haelt den Echo Show aktiv)
+  REFRESH_INTERVAL: 240000,
+
+  // Farbschema
+  THEME: {
+    bg: '#ffffff',
+    text: '#000000',
+    today: '#e94560',
+    grid: '#f5f5f5'
+  }
+};
+
+// ============================================================
+// AB HIER NICHTS AENDERN (es sei denn, du weisst was du tust)
+// ============================================================
+
+const DAYS_DE = ['So', 'Mo', 'Di', 'Mi', 'Do', 'Fr', 'Sa'];
+const MONTHS_DE = ['Jan', 'Feb', 'Mär', 'Apr', 'Mai', 'Jun', 'Jul', 'Aug', 'Sep', 'Okt', 'Nov', 'Dez'];
+
+// --- Hilfsfunktionen ---
+
+function getWeekBounds(now) {
+  const start = new Date(now);
+  const day = start.getDay();
+  const diff = (day - CONFIG.WEEK_START + 7) % 7;
+  start.setDate(start.getDate() - diff);
+  start.setHours(0, 0, 0, 0);
+
+  const end = new Date(start);
+  end.setDate(end.getDate() + 7);
+  return { start, end };
+}
+
+function getKW(date) {
+  const d = new Date(Date.UTC(date.getFullYear(), date.getMonth(), date.getDate()));
+  d.setUTCDate(d.getUTCDate() + 4 - (d.getUTCDay() || 7));
+  const yearStart = new Date(Date.UTC(d.getUTCFullYear(), 0, 1));
+  return Math.ceil(((d - yearStart) / 86400000 + 1) / 7);
+}
+
+function formatTime(date) {
+  return date.toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit' });
+}
+
+function formatDate(date) {
+  return date.getDate() + '. ' + MONTHS_DE[date.getMonth()];
+}
+
+function isSameDay(a, b) {
+  return a.getFullYear() === b.getFullYear() &&
+         a.getMonth() === b.getMonth() &&
+         a.getDate() === b.getDate();
+}
+
+// --- ICS laden und parsen ---
+
+async function fetchCalendar(cal) {
+  const url = CONFIG.CORS_PROXY + encodeURIComponent(cal.url);
+  const resp = await fetch(url);
+  if (!resp.ok) throw new Error(`Fehler beim Laden von "${cal.name}": ${resp.status}`);
+  const text = await resp.text();
+  return { text, cal };
+}
+
+function parseEvents(icsText, calInfo, weekStart, weekEnd) {
+  const events = [];
+  const jcal = ICAL.parse(icsText);
+  const comp = new ICAL.Component(jcal);
+  const vevents = comp.getAllSubcomponents('vevent');
+
+  for (const vevent of vevents) {
+    const event = new ICAL.Event(vevent);
+
+    if (event.isRecurring()) {
+      // Wiederkehrende Termine expandieren
+      const iter = event.iterator();
+      let next;
+      let safety = 0;
+      while ((next = iter.next()) && safety < 500) {
+        safety++;
+        const occStart = next.toJSDate();
+        if (occStart >= weekEnd) break;
+
+        const duration = event.duration;
+        const occEnd = new Date(occStart.getTime() + duration.toSeconds() * 1000);
+        if (occEnd <= weekStart) continue;
+
+        const isAllDay = next.isDate;
+        events.push({
+          title: event.summary || '(Kein Titel)',
+          start: occStart,
+          end: occEnd,
+          allDay: isAllDay,
+          color: calInfo.color,
+          calName: calInfo.name
+        });
+      }
+    } else {
+      const dtstart = event.startDate;
+      const dtend = event.endDate;
+      if (!dtstart) continue;
+
+      const start = dtstart.toJSDate();
+      const end = dtend ? dtend.toJSDate() : new Date(start.getTime() + 3600000);
+
+      if (start >= weekEnd || end <= weekStart) continue;
+
+      events.push({
+        title: event.summary || '(Kein Titel)',
+        start,
+        end,
+        allDay: dtstart.isDate,
+        color: calInfo.color,
+        calName: calInfo.name
+      });
+    }
+  }
+
+  return events;
+}
+
+// --- Rendern ---
+
+function render(allEvents, now) {
+  const { start: weekStart } = getWeekBounds(now);
+  const kw = getKW(now);
+
+  // Tage der Woche aufbauen
+  const days = [];
+  for (let i = 0; i < 7; i++) {
+    const d = new Date(weekStart);
+    d.setDate(d.getDate() + i);
+    days.push(d);
+  }
+
+  const rangeStr = formatDate(days[0]) + ' – ' + formatDate(days[6]);
+
+  // Events pro Tag zuordnen
+  const dayEvents = days.map(day => {
+    const dayStart = new Date(day);
+    dayStart.setHours(0, 0, 0, 0);
+    const dayEnd = new Date(day);
+    dayEnd.setHours(23, 59, 59, 999);
+
+    return allEvents
+      .filter(e => {
+        if (e.allDay) {
+          // Ganztaegig: Start-Datum faellt auf diesen Tag ODER Event ueberspannt diesen Tag
+          const evStartDay = new Date(e.start);
+          evStartDay.setHours(0, 0, 0, 0);
+          const evEndDay = new Date(e.end);
+          evEndDay.setHours(0, 0, 0, 0);
+          return dayStart >= evStartDay && dayStart < evEndDay;
+        }
+        return e.start < dayEnd && e.end > dayStart;
+      })
+      .sort((a, b) => {
+        // Ganztaegig zuerst, dann nach Startzeit
+        if (a.allDay && !b.allDay) return -1;
+        if (!a.allDay && b.allDay) return 1;
+        return a.start - b.start;
+      });
+  });
+
+  // HTML zusammenbauen
+  let html = '';
+
+  // Header
+  html += '<div class="header">';
+  html += '<div>';
+  html += `<div class="header-title">Familienkalender</div>`;
+  html += `<div class="header-week">KW ${kw} · ${rangeStr}</div>`;
+  html += '</div>';
+  html += '<div class="header-right">';
+  html += '<div class="legend">';
+  for (const cal of CONFIG.CALENDARS) {
+    html += `<div class="legend-item"><span class="legend-dot" style="background:${cal.color}"></span>${cal.name}</div>`;
+  }
+  html += '</div>';
+  html += `<div class="clock" id="clock">${formatTime(now)}</div>`;
+  html += '</div>';
+  html += '</div>';
+
+  // Wochentage-Grid
+  html += '<div class="week-grid">';
+  for (let i = 0; i < 7; i++) {
+    const day = days[i];
+    const isToday = isSameDay(day, now);
+    const dayIdx = day.getDay();
+    const events = dayEvents[i];
+
+    html += `<div class="day-column${isToday ? ' today' : ''}">`;
+    html += '<div class="day-header">';
+    html += `<div class="day-name">${DAYS_DE[dayIdx]}</div>`;
+    html += `<div class="day-date">${day.getDate()}. ${MONTHS_DE[day.getMonth()]}</div>`;
+    html += '</div>';
+    html += '<div class="day-events">';
+
+    const maxVisible = 6;
+    const visibleEvents = events.slice(0, maxVisible);
+
+    for (const ev of visibleEvents) {
+      const bgColor = ev.color;
+      if (ev.allDay) {
+        html += `<div class="event all-day" style="background:${bgColor}">`;
+        html += `<div class="event-title">${escapeHtml(ev.title)}</div>`;
+        html += '</div>';
+      } else {
+        html += `<div class="event" style="background:${bgColor}">`;
+        html += `<div class="event-time">${formatTime(ev.start)} – ${formatTime(ev.end)}</div>`;
+        html += `<div class="event-title">${escapeHtml(ev.title)}</div>`;
+        html += '</div>';
+      }
+    }
+
+    if (events.length > maxVisible) {
+      html += `<div class="overflow-hint">+${events.length - maxVisible} weitere</div>`;
+    }
+
+    html += '</div></div>';
+  }
+  html += '</div>';
+
+  document.getElementById('calendar').innerHTML = html;
+  document.getElementById('calendar').style.display = 'flex';
+  document.getElementById('loading').style.display = 'none';
+
+  // Uhr aktualisieren
+  startClock();
+}
+
+function escapeHtml(str) {
+  const div = document.createElement('div');
+  div.textContent = str;
+  return div.innerHTML;
+}
+
+function startClock() {
+  const tick = () => {
+    const el = document.getElementById('clock');
+    if (el) el.textContent = formatTime(new Date());
+  };
+  setInterval(tick, 30000);
+}
+
+// --- Fehleranzeige ---
+
+function showError(msg, detail) {
+  document.getElementById('loading').style.display = 'none';
+  const el = document.createElement('div');
+  el.className = 'error';
+  el.innerHTML = `<div>${escapeHtml(msg)}</div>` +
+    (detail ? `<div class="error-detail">${escapeHtml(detail)}</div>` : '');
+  document.body.appendChild(el);
+}
+
+// --- Start ---
+
+async function init() {
+  const now = new Date();
+  const { start: weekStart, end: weekEnd } = getWeekBounds(now);
+
+  const results = await Promise.allSettled(
+    CONFIG.CALENDARS.map(cal => fetchCalendar(cal))
+  );
+
+  let allEvents = [];
+  const errors = [];
+
+  for (const result of results) {
+    if (result.status === 'fulfilled') {
+      const { text, cal } = result.value;
+      try {
+        const events = parseEvents(text, cal, weekStart, weekEnd);
+        allEvents = allEvents.concat(events);
+      } catch (err) {
+        errors.push(`${cal.name}: Parse-Fehler`);
+        console.error(`Parse-Fehler bei "${cal.name}":`, err);
+      }
+    } else {
+      errors.push(result.reason.message);
+      console.error('Kalender-Fehler:', result.reason);
+    }
+  }
+
+  if (allEvents.length === 0 && errors.length === results.length) {
+    showError('Kein Kalender konnte geladen werden', errors.join(' | '));
+  } else {
+    render(allEvents, now);
+    if (errors.length > 0) {
+      console.warn('Einige Kalender konnten nicht geladen werden:', errors);
+    }
+  }
+}
+
+init();
+
+// Auto-Refresh
+setInterval(() => location.reload(), CONFIG.REFRESH_INTERVAL);
+
+</script>
+</body>
+</html>
