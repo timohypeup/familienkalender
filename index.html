@@ -83,73 +83,107 @@
       font-variant-numeric: tabular-nums;
     }
 
-    /* --- Wochentage-Grid --- */
-    .week-grid {
+    /* --- Kalender-Grid --- */
+    .cal-grid {
       display: grid;
       grid-template-columns: repeat(7, 1fr);
-      gap: 0.6rem;
+      grid-template-rows: auto auto 1fr 1fr 1fr;
+      gap: 0 0.4rem;
       flex: 1;
       min-height: 0;
     }
 
-    .day-column {
-      display: flex;
-      flex-direction: column;
-      background: #f5f5f5;
-      border-radius: 10px;
-      overflow: hidden;
-    }
-
-    .day-column.today {
-      outline: 3px solid #e94560;
-      outline-offset: -1px;
-    }
-
+    /* Tagesheader-Zeile */
     .day-header {
       text-align: center;
-      padding: 0.6rem 0.4rem;
+      padding: 0.4rem 0.2rem;
       background: rgba(0,0,0,0.05);
-      flex-shrink: 0;
+      border-radius: 8px 8px 0 0;
+    }
+
+    .day-header.today {
+      background: #e94560;
+      color: #fff;
     }
 
     .day-name {
-      font-size: 1.5rem;
+      font-size: 1.4rem;
       font-weight: 700;
       text-transform: uppercase;
       letter-spacing: 0.05em;
     }
 
-    .day-column.today .day-name {
-      color: #e94560;
-    }
-
     .day-date {
-      font-size: 1.1rem;
+      font-size: 1rem;
       opacity: 0.6;
-      margin-top: 0.15rem;
+      margin-top: 0.1rem;
     }
 
-    .day-events {
-      flex: 1;
-      overflow: hidden;
-      padding: 0.4rem;
+    .day-header.today .day-date {
+      opacity: 0.9;
+    }
+
+    /* Ganztaegige Zeile */
+    .allday-cell {
+      background: #f5f5f5;
+      padding: 0.25rem;
       display: flex;
       flex-direction: column;
-      gap: 0.35rem;
+      gap: 0.2rem;
+      min-height: 2.2rem;
+      border-left: 1px solid #e8e8e8;
+      border-right: 1px solid #e8e8e8;
+    }
+
+    /* Zeitslot-Zellen */
+    .slot-cell {
+      background: #f9f9f9;
+      padding: 0.25rem;
+      display: flex;
+      flex-direction: column;
+      gap: 0.2rem;
+      overflow: hidden;
+      border-left: 1px solid #e8e8e8;
+      border-right: 1px solid #e8e8e8;
+    }
+
+    .slot-cell:last-child {
+      border-radius: 0 0 8px 8px;
+    }
+
+    .slot-cell.slot-afternoon {
+      background: #f5f5f5;
+    }
+
+    .slot-cell.slot-evening {
+      background: #f0f0f0;
+    }
+
+    /* Trennlinie zwischen Slots */
+    .slot-cell + .slot-cell {
+      border-top: 1px dashed #ddd;
+    }
+
+    /* Today-Spalte hervorheben */
+    .today-col .allday-cell,
+    .today-col .slot-cell {
+      outline: 2px solid #e94560;
+      outline-offset: -1px;
     }
 
     /* --- Events --- */
     .event {
-      border-radius: 6px;
-      padding: 0.4rem 0.5rem;
-      font-size: 1.05rem;
-      line-height: 1.3;
+      border-radius: 5px;
+      padding: 0.25rem 0.4rem;
+      font-size: 0.95rem;
+      line-height: 1.25;
       flex-shrink: 0;
+      color: #fff;
     }
 
     .event-time {
-      font-size: 0.85rem;
-      opacity: 0.8;
+      font-size: 0.75rem;
+      opacity: 0.85;
       font-weight: 600;
     }
 
@@ -161,6 +195,17 @@
     .event.all-day {
       font-weight: 600;
       text-align: center;
+    }
+
+    .event.spans-into {
+      border-top-left-radius: 0;
+      border-top-right-radius: 0;
+      border-top: 2px dashed rgba(255,255,255,0.4);
+    }
+
+    .event.spans-out {
+      border-bottom-left-radius: 0;
+      border-bottom-right-radius: 0;
     }
 
     /* --- Ladescreen / Fehler --- */
@@ -415,29 +460,50 @@ function render(allEvents, now) {
 
   const rangeStr = formatDate(days[0]) + ' – ' + formatDate(days[6]);
 
-  // Events dieser Woche filtern
-  const dayEvents = days.map(day => {
+  // Zeitslots: Vormittag, Nachmittag, Abend
+  const SLOTS = [
+    { start: 0, end: 12 },   // Vormittag
+    { start: 12, end: 18 },  // Nachmittag
+    { start: 18, end: 24 }   // Abend
+  ];
+
+  // Events pro Tag aufteilen
+  const dayData = days.map(day => {
     const dayStart = new Date(day);
     dayStart.setHours(0, 0, 0, 0);
     const dayEnd = new Date(day);
     dayEnd.setHours(23, 59, 59, 999);
 
-    return allEvents
-      .filter(e => {
-        if (e.allDay) {
-          const evStartDay = new Date(e.start);
-          evStartDay.setHours(0, 0, 0, 0);
-          const evEndDay = new Date(e.end);
-          evEndDay.setHours(0, 0, 0, 0);
-          return dayStart >= evStartDay && dayStart < evEndDay;
-        }
-        return e.start < dayEnd && e.end > dayStart;
-      })
-      .sort((a, b) => {
-        if (a.allDay && !b.allDay) return -1;
-        if (!a.allDay && b.allDay) return 1;
-        return a.start - b.start;
-      });
+    const dayAllEvents = allEvents.filter(e => {
+      if (e.allDay) {
+        const evStartDay = new Date(e.start); evStartDay.setHours(0,0,0,0);
+        const evEndDay = new Date(e.end); evEndDay.setHours(0,0,0,0);
+        return dayStart >= evStartDay && dayStart < evEndDay;
+      }
+      return e.start < dayEnd && e.end > dayStart;
+    });
+
+    const allDayEvents = dayAllEvents.filter(e => e.allDay);
+    const timedEvents = dayAllEvents.filter(e => !e.allDay).sort((a,b) => a.start - b.start);
+
+    // Events in Slots einordnen (ein Event kann in mehreren Slots erscheinen)
+    const slotEvents = SLOTS.map(slot => {
+      const slotStart = new Date(day); slotStart.setHours(slot.start, 0, 0, 0);
+      const slotEnd = new Date(day); slotEnd.setHours(slot.end, 0, 0, 0);
+      return timedEvents
+        .filter(e => e.start < slotEnd && e.end > slotStart)
+        .map(e => {
+          const startsInSlot = e.start >= slotStart && e.start < slotEnd;
+          const endsInSlot = e.end > slotStart && e.end <= slotEnd;
+          return {
+            ...e,
+            spansInto: !startsInSlot,  // kommt aus vorigem Slot
+            spansOut: !endsInSlot       // geht in naechsten Slot
+          };
+        });
+    });
+
+    return { allDayEvents, slotEvents };
   });
 
   // HTML zusammenbauen
@@ -468,44 +534,53 @@ function render(allEvents, now) {
   html += '</div>';
   html += '</div>';
 
-  // Wochentage-Grid
-  html += '<div class="week-grid">';
+  // Kalender-Grid: 7 Spalten, 5 Zeilen (Header, Ganztaegig, VM, NM, Abend)
+  html += '<div class="cal-grid">';
+
+  // Zeile 1: Tagesheader
   for (let i = 0; i < 7; i++) {
     const day = days[i];
     const isToday = isSameDay(day, now);
-    const dayIdx = day.getDay();
-    const events = dayEvents[i];
-
-    html += `<div class="day-column${isToday ? ' today' : ''}">`;
-    html += '<div class="day-header">';
-    html += `<div class="day-name">${DAYS_DE[dayIdx]}</div>`;
+    html += `<div class="day-header${isToday ? ' today' : ''}">`;
+    html += `<div class="day-name">${DAYS_DE[day.getDay()]}</div>`;
     html += `<div class="day-date">${day.getDate()}. ${MONTHS_DE[day.getMonth()]}</div>`;
     html += '</div>';
-    html += '<div class="day-events">';
+  }
 
-    const maxVisible = 6;
-    const visibleEvents = events.slice(0, maxVisible);
+  // Zeile 2: Ganztaegige Termine
+  for (let i = 0; i < 7; i++) {
+    const isToday = isSameDay(days[i], now);
+    const wrap = isToday ? ' today-col' : '';
+    html += `<div class="allday-cell${wrap}">`;
+    for (const ev of dayData[i].allDayEvents) {
+      html += `<div class="event all-day" style="background:${ev.color}">`;
+      html += `<div class="event-title">${escapeHtml(ev.title)}</div>`;
+      html += '</div>';
+    }
+    html += '</div>';
+  }
 
-    for (const ev of visibleEvents) {
-      const bgColor = ev.color;
-      if (ev.allDay) {
-        html += `<div class="event all-day" style="background:${bgColor}">`;
-        html += `<div class="event-title">${escapeHtml(ev.title)}</div>`;
-        html += '</div>';
-      } else {
-        html += `<div class="event" style="background:${bgColor}">`;
-        html += `<div class="event-time">${formatTime(ev.start)} – ${formatTime(ev.end)}</div>`;
+  // Zeilen 3-5: Zeitslots (Vormittag, Nachmittag, Abend)
+  const slotClasses = ['slot-morning', 'slot-afternoon', 'slot-evening'];
+  for (let s = 0; s < 3; s++) {
+    for (let i = 0; i < 7; i++) {
+      const isToday = isSameDay(days[i], now);
+      const wrap = isToday ? ' today-col' : '';
+      html += `<div class="slot-cell ${slotClasses[s]}${wrap}">`;
+      const events = dayData[i].slotEvents[s];
+      for (const ev of events) {
+        const spanCls = (ev.spansInto ? ' spans-into' : '') + (ev.spansOut ? ' spans-out' : '');
+        html += `<div class="event${spanCls}" style="background:${ev.color}">`;
+        if (!ev.spansInto) {
+          html += `<div class="event-time">${formatTime(ev.start)} – ${formatTime(ev.end)}</div>`;
+        }
         html += `<div class="event-title">${escapeHtml(ev.title)}</div>`;
         html += '</div>';
       }
+      html += '</div>';
     }
-
-    if (events.length > maxVisible) {
-      html += `<div class="overflow-hint">+${events.length - maxVisible} weitere</div>`;
-    }
-
-    html += '</div></div>';
   }
+
   html += '</div>';
 
   document.getElementById('calendar').innerHTML = html;
