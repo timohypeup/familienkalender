@@ -151,6 +151,28 @@
       outline-offset: -1px;
     }
 
+    /* Aktueller-Zeitpunkt-Indikator */
+    .time-indicator {
+      position: absolute;
+      left: 0;
+      right: 0;
+      height: 2px;
+      background: #e53e3e;
+      z-index: 10;
+      pointer-events: none;
+    }
+
+    .time-indicator::before {
+      content: '';
+      position: absolute;
+      left: -1px;
+      top: -4px;
+      width: 10px;
+      height: 10px;
+      background: #e53e3e;
+      border-radius: 50%;
+    }
+
     /* Zeitlinien bei 12:00 und 18:00 */
     .time-line {
       position: absolute;
@@ -335,6 +357,16 @@ const CONFIG = {
 
 let weekOffset = 0; // 0 = aktuelle Woche, -1 = letzte, +1 = naechste
 let cachedCalendarData = null; // ICS-Daten zwischenspeichern
+let inactivityTimer = null;
+
+// Zeitbereich-Konstanten (global, damit startClock sie nutzen kann)
+const DAY_START_H = 8;
+const DAY_END_H = 20;
+const DAY_SPAN = DAY_END_H - DAY_START_H;
+
+function hourToPercent(h) {
+  return Math.max(0, Math.min(100, ((h - DAY_START_H) / DAY_SPAN) * 100));
+}
 
 const DAYS_DE = ['So', 'Mo', 'Di', 'Mi', 'Do', 'Fr', 'Sa'];
 const MONTHS_DE = ['Jan', 'Feb', 'Mär', 'Apr', 'Mai', 'Jun', 'Jul', 'Aug', 'Sep', 'Okt', 'Nov', 'Dez'];
@@ -457,11 +489,6 @@ function render(allEvents, now) {
 
   const rangeStr = formatDate(days[0]) + ' – ' + formatDate(days[6]);
 
-  // Sichtbarer Zeitbereich (in Stunden) — 6:00 bis 24:00
-  const DAY_START_H = 8;
-  const DAY_END_H = 20;
-  const DAY_SPAN = DAY_END_H - DAY_START_H; // 18 Stunden
-
   // Zeitlinien bei 12:00 und 18:00
   const TIME_LINES = [12, 18];
 
@@ -518,11 +545,6 @@ function render(allEvents, now) {
   html += '</div>';
   html += '</div>';
 
-  // Hilfsfunktion: Stunden als Prozent im sichtbaren Bereich
-  function hourToPercent(h) {
-    return Math.max(0, Math.min(100, ((h - DAY_START_H) / DAY_SPAN) * 100));
-  }
-
   // Kalender-Grid: 7 Spalten, 3 Zeilen (Header, Ganztaegig, Zeitspalte)
   html += '<div class="cal-grid">';
 
@@ -557,6 +579,14 @@ function render(allEvents, now) {
     for (const h of TIME_LINES) {
       const pct = hourToPercent(h);
       html += `<div class="time-line" style="top:${pct}%"></div>`;
+    }
+
+    // Aktueller-Zeitpunkt-Indikator (nur heute, nur wenn Zeit im sichtbaren Bereich)
+    if (isToday) {
+      const nowH = now.getHours() + now.getMinutes() / 60;
+      if (nowH >= DAY_START_H && nowH <= DAY_END_H) {
+        html += `<div class="time-indicator" id="time-indicator" style="top:${hourToPercent(nowH)}%"></div>`;
+      }
     }
 
     // Events proportional positionieren mit Overlap-Handling
@@ -636,6 +666,14 @@ function startClock() {
   const tick = () => {
     const el = document.getElementById('clock');
     if (el) el.textContent = formatTime(new Date());
+    // Zeitindikator live aktualisieren
+    const indicator = document.getElementById('time-indicator');
+    if (indicator) {
+      const nowH = new Date().getHours() + new Date().getMinutes() / 60;
+      if (nowH >= DAY_START_H && nowH <= DAY_END_H) {
+        indicator.style.top = hourToPercent(nowH) + '%';
+      }
+    }
   };
   setInterval(tick, 30000);
 }
@@ -656,10 +694,20 @@ function showError(msg, detail) {
 function navigateWeek(direction, reset) {
   if (reset) {
     weekOffset = 0;
+    if (inactivityTimer) { clearTimeout(inactivityTimer); inactivityTimer = null; }
   } else {
     weekOffset += direction;
   }
   renderFromCache();
+  // Inaktivitäts-Timer: nach 1 Minute ohne Navigation zurück zur aktuellen Woche
+  if (weekOffset !== 0) {
+    if (inactivityTimer) clearTimeout(inactivityTimer);
+    inactivityTimer = setTimeout(() => {
+      weekOffset = 0;
+      inactivityTimer = null;
+      renderFromCache();
+    }, 60000);
+  }
 }
 
 function renderFromCache() {
@@ -722,7 +770,7 @@ fetchAllCalendars();
 // Auto-Refresh: Daten neu laden, Offset beibehalten
 setInterval(() => fetchAllCalendars(), CONFIG.REFRESH_INTERVAL);
 
-// Fullscreen-Modus: per Button oder nach Aktivierung Seite neu rendern
+// Fullscreen-Modus: per Button, Antippen irgendwo, oder nach Aktivierung Seite neu rendern
 function enterFullscreen() {
   const el = document.documentElement;
   const rfs = el.requestFullscreen || el.webkitRequestFullscreen || el.mozRequestFullScreen || el.msRequestFullscreen;
@@ -730,6 +778,14 @@ function enterFullscreen() {
     rfs.call(el).then(() => renderFromCache()).catch(() => {});
   }
 }
+
+// Beim ersten Antippen irgendwo automatisch Fullscreen aktivieren
+document.addEventListener('touchstart', function onFirstTouch() {
+  if (!document.fullscreenElement && !document.webkitFullscreenElement) {
+    enterFullscreen();
+  }
+  document.removeEventListener('touchstart', onFirstTouch);
+}, { once: true });
 
 </script>
 </body>
