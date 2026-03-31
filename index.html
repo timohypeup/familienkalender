@@ -266,6 +266,17 @@
     .nav-btn-heute:active {
       background: #c73650;
     }
+
+    .nav-btn-fullscreen {
+      font-size: 1.2rem;
+      background: #333;
+      border-color: #333;
+      color: #fff;
+    }
+
+    .nav-btn-fullscreen:active {
+      background: #555;
+    }
   </style>
 </head>
 <body>
@@ -501,6 +512,9 @@ function render(allEvents, now) {
   }
   html += '</div>';
   html += `<div class="clock" id="clock">${formatTime(new Date())}</div>`;
+  if (!document.fullscreenElement && !document.webkitFullscreenElement) {
+    html += '<button class="nav-btn nav-btn-fullscreen" onclick="enterFullscreen()">⛶</button>';
+  }
   html += '</div>';
   html += '</div>';
 
@@ -708,18 +722,14 @@ fetchAllCalendars();
 // Auto-Refresh: Daten neu laden, Offset beibehalten
 setInterval(() => fetchAllCalendars(), CONFIG.REFRESH_INTERVAL);
 
-// Fullscreen-Modus: beim ersten Touch aktivieren (Silk Browser braucht User-Geste)
+// Fullscreen-Modus: per Button oder nach Aktivierung Seite neu rendern
 function enterFullscreen() {
   const el = document.documentElement;
   const rfs = el.requestFullscreen || el.webkitRequestFullscreen || el.mozRequestFullScreen || el.msRequestFullscreen;
   if (rfs) {
-    rfs.call(el).catch(() => {});
+    rfs.call(el).then(() => renderFromCache()).catch(() => {});
   }
-  document.removeEventListener('click', enterFullscreen);
-  document.removeEventListener('touchstart', enterFullscreen);
 }
-document.addEventListener('click', enterFullscreen);
-document.addEventListener('touchstart', enterFullscreen);
 
 </script>
 </body>
