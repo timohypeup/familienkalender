@@ -87,7 +87,7 @@
     .cal-grid {
       display: grid;
       grid-template-columns: repeat(7, 1fr);
-      grid-template-rows: auto auto 1fr 1fr 1fr;
+      grid-template-rows: auto auto 1fr;
       gap: 0 0.4rem;
       flex: 1;
       min-height: 0;
@@ -130,59 +130,49 @@
       display: flex;
       flex-direction: column;
       gap: 0.2rem;
-      min-height: 2.2rem;
+      min-height: 2rem;
       border-left: 1px solid #e8e8e8;
       border-right: 1px solid #e8e8e8;
+      border-bottom: 2px solid #ddd;
     }
 
-    /* Zeitslot-Zellen */
-    .slot-cell {
+    /* Zeitspalte — proportionale Darstellung */
+    .time-column {
+      position: relative;
       background: #f9f9f9;
-      padding: 0.25rem;
-      display: flex;
-      flex-direction: column;
-      gap: 0.2rem;
-      overflow: hidden;
       border-left: 1px solid #e8e8e8;
       border-right: 1px solid #e8e8e8;
-    }
-
-    .slot-cell:last-child {
       border-radius: 0 0 8px 8px;
+      overflow: hidden;
     }
 
-    .slot-cell.slot-afternoon {
-      background: #f5f5f5;
-    }
-
-    .slot-cell.slot-evening {
-      background: #f0f0f0;
-    }
-
-    /* Trennlinie zwischen Slots */
-    .slot-cell + .slot-cell {
-      border-top: 1px dashed #ddd;
-    }
-
-    /* Today-Spalte hervorheben */
-    .today-col .allday-cell,
-    .today-col .slot-cell {
+    .time-column.today-col {
       outline: 2px solid #e94560;
       outline-offset: -1px;
+    }
+
+    /* Zeitlinien bei 12:00 und 18:00 */
+    .time-line {
+      position: absolute;
+      left: 0;
+      right: 0;
+      border-top: 1px dashed #ddd;
+      z-index: 1;
+      pointer-events: none;
     }
 
     /* --- Events --- */
     .event {
       border-radius: 5px;
-      padding: 0.25rem 0.4rem;
-      font-size: 0.95rem;
-      line-height: 1.25;
-      flex-shrink: 0;
+      padding: 0.2rem 0.35rem;
+      font-size: 0.9rem;
+      line-height: 1.2;
       color: #fff;
+      overflow: hidden;
     }
 
     .event-time {
-      font-size: 0.75rem;
+      font-size: 0.7rem;
       opacity: 0.85;
       font-weight: 600;
     }
@@ -197,15 +187,13 @@
       text-align: center;
     }
 
-    .event.spans-into {
-      border-top-left-radius: 0;
-      border-top-right-radius: 0;
-      border-top: 2px dashed rgba(255,255,255,0.4);
-    }
-
-    .event.spans-out {
-      border-bottom-left-radius: 0;
-      border-bottom-right-radius: 0;
+    /* Zeitbasierte Events — absolute Positionierung */
+    .event-timed {
+      position: absolute;
+      left: 3px;
+      right: 3px;
+      z-index: 2;
+      min-height: 1.4rem;
     }
 
     /* --- Ladescreen / Fehler --- */
@@ -460,12 +448,13 @@ function render(allEvents, now) {
 
   const rangeStr = formatDate(days[0]) + ' – ' + formatDate(days[6]);
 
-  // Zeitslots: Vormittag, Nachmittag, Abend
-  const SLOTS = [
-    { start: 0, end: 12 },   // Vormittag
-    { start: 12, end: 18 },  // Nachmittag
-    { start: 18, end: 24 }   // Abend
-  ];
+  // Sichtbarer Zeitbereich (in Stunden) — 6:00 bis 24:00
+  const DAY_START_H = 6;
+  const DAY_END_H = 24;
+  const DAY_SPAN = DAY_END_H - DAY_START_H; // 18 Stunden
+
+  // Zeitlinien bei 12:00 und 18:00
+  const TIME_LINES = [12, 18];
 
   // Events pro Tag aufteilen
   const dayData = days.map(day => {
@@ -486,24 +475,7 @@ function render(allEvents, now) {
     const allDayEvents = dayAllEvents.filter(e => e.allDay);
     const timedEvents = dayAllEvents.filter(e => !e.allDay).sort((a,b) => a.start - b.start);
 
-    // Events in Slots einordnen (ein Event kann in mehreren Slots erscheinen)
-    const slotEvents = SLOTS.map(slot => {
-      const slotStart = new Date(day); slotStart.setHours(slot.start, 0, 0, 0);
-      const slotEnd = new Date(day); slotEnd.setHours(slot.end, 0, 0, 0);
-      return timedEvents
-        .filter(e => e.start < slotEnd && e.end > slotStart)
-        .map(e => {
-          const startsInSlot = e.start >= slotStart && e.start < slotEnd;
-          const endsInSlot = e.end > slotStart && e.end <= slotEnd;
-          return {
-            ...e,
-            spansInto: !startsInSlot,  // kommt aus vorigem Slot
-            spansOut: !endsInSlot       // geht in naechsten Slot
-          };
-        });
-    });
-
-    return { allDayEvents, slotEvents };
+    return { allDayEvents, timedEvents };
   });
 
   // HTML zusammenbauen
@@ -534,7 +506,12 @@ function render(allEvents, now) {
   html += '</div>';
   html += '</div>';
 
-  // Kalender-Grid: 7 Spalten, 5 Zeilen (Header, Ganztaegig, VM, NM, Abend)
+  // Hilfsfunktion: Stunden als Prozent im sichtbaren Bereich
+  function hourToPercent(h) {
+    return Math.max(0, Math.min(100, ((h - DAY_START_H) / DAY_SPAN) * 100));
+  }
+
+  // Kalender-Grid: 7 Spalten, 3 Zeilen (Header, Ganztaegig, Zeitspalte)
   html += '<div class="cal-grid">';
 
   // Zeile 1: Tagesheader
@@ -549,9 +526,7 @@ function render(allEvents, now) {
 
   // Zeile 2: Ganztaegige Termine
   for (let i = 0; i < 7; i++) {
-    const isToday = isSameDay(days[i], now);
-    const wrap = isToday ? ' today-col' : '';
-    html += `<div class="allday-cell${wrap}">`;
+    html += '<div class="allday-cell">';
     for (const ev of dayData[i].allDayEvents) {
       html += `<div class="event all-day" style="background:${ev.color}">`;
       html += `<div class="event-title">${escapeHtml(ev.title)}</div>`;
@@ -560,25 +535,37 @@ function render(allEvents, now) {
     html += '</div>';
   }
 
-  // Zeilen 3-5: Zeitslots (Vormittag, Nachmittag, Abend)
-  const slotClasses = ['slot-morning', 'slot-afternoon', 'slot-evening'];
-  for (let s = 0; s < 3; s++) {
-    for (let i = 0; i < 7; i++) {
-      const isToday = isSameDay(days[i], now);
-      const wrap = isToday ? ' today-col' : '';
-      html += `<div class="slot-cell ${slotClasses[s]}${wrap}">`;
-      const events = dayData[i].slotEvents[s];
-      for (const ev of events) {
-        const spanCls = (ev.spansInto ? ' spans-into' : '') + (ev.spansOut ? ' spans-out' : '');
-        html += `<div class="event${spanCls}" style="background:${ev.color}">`;
-        if (!ev.spansInto) {
-          html += `<div class="event-time">${formatTime(ev.start)} – ${formatTime(ev.end)}</div>`;
-        }
-        html += `<div class="event-title">${escapeHtml(ev.title)}</div>`;
-        html += '</div>';
-      }
+  // Zeile 3: Zeitspalten mit proportionaler Positionierung
+  for (let i = 0; i < 7; i++) {
+    const day = days[i];
+    const isToday = isSameDay(day, now);
+    html += `<div class="time-column${isToday ? ' today-col' : ''}">`;
+
+    // Zeitlinien bei 12:00 und 18:00
+    for (const h of TIME_LINES) {
+      const pct = hourToPercent(h);
+      html += `<div class="time-line" style="top:${pct}%"></div>`;
+    }
+
+    // Events proportional positionieren
+    const dayStartTime = new Date(day); dayStartTime.setHours(DAY_START_H, 0, 0, 0);
+    const dayEndTime = new Date(day); dayEndTime.setHours(DAY_END_H, 0, 0, 0);
+
+    for (const ev of dayData[i].timedEvents) {
+      // Start/Ende auf sichtbaren Bereich klemmen
+      const evStartH = Math.max(DAY_START_H, ev.start.getHours() + ev.start.getMinutes() / 60);
+      const evEndH = Math.min(DAY_END_H, ev.end.getHours() + ev.end.getMinutes() / 60 + (ev.end.getDate() !== day.getDate() ? 24 : 0));
+
+      const topPct = hourToPercent(evStartH);
+      const heightPct = Math.max(2, hourToPercent(evEndH) - topPct);
+
+      html += `<div class="event event-timed" style="background:${ev.color};top:${topPct}%;height:${heightPct}%">`;
+      html += `<div class="event-time">${formatTime(ev.start)} – ${formatTime(ev.end)}</div>`;
+      html += `<div class="event-title">${escapeHtml(ev.title)}</div>`;
       html += '</div>';
     }
+
+    html += '</div>';
   }
 
   html += '</div>';
