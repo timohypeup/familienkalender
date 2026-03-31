@@ -194,6 +194,47 @@
       text-align: center;
       padding: 0.2rem;
     }
+
+    /* --- Navigation --- */
+    .nav {
+      display: flex;
+      align-items: center;
+      gap: 0.8rem;
+    }
+
+    .nav-btn {
+      background: #f0f0f0;
+      border: 2px solid #ddd;
+      border-radius: 8px;
+      font-size: 1.5rem;
+      font-weight: 700;
+      width: 3rem;
+      height: 3rem;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      color: #333;
+      user-select: none;
+      -webkit-tap-highlight-color: transparent;
+    }
+
+    .nav-btn:active {
+      background: #ddd;
+    }
+
+    .nav-btn-heute {
+      background: #e94560;
+      border-color: #e94560;
+      color: #fff;
+      font-size: 1rem;
+      width: auto;
+      padding: 0 1rem;
+    }
+
+    .nav-btn-heute:active {
+      background: #c73650;
+    }
   </style>
 </head>
 <body>
@@ -250,16 +291,19 @@ const CONFIG = {
 // AB HIER NICHTS AENDERN (es sei denn, du weisst was du tust)
 // ============================================================
 
+let weekOffset = 0; // 0 = aktuelle Woche, -1 = letzte, +1 = naechste
+let cachedCalendarData = null; // ICS-Daten zwischenspeichern
+
 const DAYS_DE = ['So', 'Mo', 'Di', 'Mi', 'Do', 'Fr', 'Sa'];
 const MONTHS_DE = ['Jan', 'Feb', 'Mär', 'Apr', 'Mai', 'Jun', 'Jul', 'Aug', 'Sep', 'Okt', 'Nov', 'Dez'];
 
 // --- Hilfsfunktionen ---
 
-function getWeekBounds(now) {
+function getWeekBounds(now, offset) {
   const start = new Date(now);
   const day = start.getDay();
   const diff = (day - CONFIG.WEEK_START + 7) % 7;
-  start.setDate(start.getDate() - diff);
+  start.setDate(start.getDate() - diff + (offset || 0) * 7);
   start.setHours(0, 0, 0, 0);
 
   const end = new Date(start);
@@ -358,8 +402,8 @@ function parseEvents(icsText, calInfo, weekStart, weekEnd) {
 // --- Rendern ---
 
 function render(allEvents, now) {
-  const { start: weekStart } = getWeekBounds(now);
-  const kw = getKW(now);
+  const { start: weekStart, end: weekEnd } = getWeekBounds(now, weekOffset);
+  const kw = getKW(weekStart);
 
   // Tage der Woche aufbauen
   const days = [];
@@ -371,7 +415,7 @@ function render(allEvents, now) {
 
   const rangeStr = formatDate(days[0]) + ' – ' + formatDate(days[6]);
 
-  // Events pro Tag zuordnen
+  // Events dieser Woche filtern
   const dayEvents = days.map(day => {
     const dayStart = new Date(day);
     dayStart.setHours(0, 0, 0, 0);
@@ -381,7 +425,6 @@ function render(allEvents, now) {
     return allEvents
       .filter(e => {
         if (e.allDay) {
-          // Ganztaegig: Start-Datum faellt auf diesen Tag ODER Event ueberspannt diesen Tag
           const evStartDay = new Date(e.start);
           evStartDay.setHours(0, 0, 0, 0);
           const evEndDay = new Date(e.end);
@@ -391,7 +434,6 @@ function render(allEvents, now) {
         return e.start < dayEnd && e.end > dayStart;
       })
       .sort((a, b) => {
-        // Ganztaegig zuerst, dann nach Startzeit
         if (a.allDay && !b.allDay) return -1;
         if (!a.allDay && b.allDay) return 1;
         return a.start - b.start;
@@ -403,9 +445,18 @@ function render(allEvents, now) {
 
   // Header
   html += '<div class="header">';
+  html += '<div style="display:flex;align-items:center;gap:1rem">';
+  html += '<div class="nav">';
+  html += '<button class="nav-btn" onclick="navigateWeek(-1)">◀</button>';
+  if (weekOffset !== 0) {
+    html += '<button class="nav-btn nav-btn-heute" onclick="navigateWeek(0, true)">Heute</button>';
+  }
+  html += '<button class="nav-btn" onclick="navigateWeek(1)">▶</button>';
+  html += '</div>';
   html += '<div>';
   html += `<div class="header-title">Familienkalender</div>`;
   html += `<div class="header-week">KW ${kw} · ${rangeStr}</div>`;
+  html += '</div>';
   html += '</div>';
   html += '<div class="header-right">';
   html += '<div class="legend">';
@@ -413,7 +464,7 @@ function render(allEvents, now) {
     html += `<div class="legend-item"><span class="legend-dot" style="background:${cal.color}"></span>${cal.name}</div>`;
   }
   html += '</div>';
-  html += `<div class="clock" id="clock">${formatTime(now)}</div>`;
+  html += `<div class="clock" id="clock">${formatTime(new Date())}</div>`;
   html += '</div>';
   html += '</div>';
 
@@ -490,49 +541,76 @@ function showError(msg, detail) {
   document.body.appendChild(el);
 }
 
+// --- Navigation ---
+
+function navigateWeek(direction, reset) {
+  if (reset) {
+    weekOffset = 0;
+  } else {
+    weekOffset += direction;
+  }
+  renderFromCache();
+}
+
+function renderFromCache() {
+  if (!cachedCalendarData) return;
+  const now = new Date();
+  const { start: weekStart, end: weekEnd } = getWeekBounds(now, weekOffset);
+
+  let allEvents = [];
+  for (const { text, cal } of cachedCalendarData) {
+    try {
+      // Fuer Navigation breiten Zeitraum parsen (±6 Monate)
+      const wideStart = new Date(now);
+      wideStart.setMonth(wideStart.getMonth() - 6);
+      const wideEnd = new Date(now);
+      wideEnd.setMonth(wideEnd.getMonth() + 6);
+      const events = parseEvents(text, cal, wideStart, wideEnd);
+      allEvents = allEvents.concat(events);
+    } catch (err) {
+      console.error(`Parse-Fehler bei "${cal.name}":`, err);
+    }
+  }
+
+  render(allEvents, now);
+}
+
 // --- Start ---
 
-async function init() {
-  const now = new Date();
-  const { start: weekStart, end: weekEnd } = getWeekBounds(now);
-
+async function fetchAllCalendars() {
   const results = await Promise.allSettled(
     CONFIG.CALENDARS.map(cal => fetchCalendar(cal))
   );
 
-  let allEvents = [];
+  const calData = [];
   const errors = [];
 
   for (const result of results) {
     if (result.status === 'fulfilled') {
-      const { text, cal } = result.value;
-      try {
-        const events = parseEvents(text, cal, weekStart, weekEnd);
-        allEvents = allEvents.concat(events);
-      } catch (err) {
-        errors.push(`${cal.name}: Parse-Fehler`);
-        console.error(`Parse-Fehler bei "${cal.name}":`, err);
-      }
+      calData.push(result.value);
     } else {
       errors.push(result.reason.message);
       console.error('Kalender-Fehler:', result.reason);
     }
   }
 
-  if (allEvents.length === 0 && errors.length === results.length) {
+  if (calData.length === 0) {
     showError('Kein Kalender konnte geladen werden', errors.join(' | '));
-  } else {
-    render(allEvents, now);
-    if (errors.length > 0) {
-      console.warn('Einige Kalender konnten nicht geladen werden:', errors);
-    }
+    return;
   }
+
+  cachedCalendarData = calData;
+  if (errors.length > 0) {
+    console.warn('Einige Kalender konnten nicht geladen werden:', errors);
+  }
+
+  renderFromCache();
 }
 
-init();
+fetchAllCalendars();
 
-// Auto-Refresh
-setInterval(() => location.reload(), CONFIG.REFRESH_INTERVAL);
+// Auto-Refresh: Daten neu laden, Offset beibehalten
+setInterval(() => fetchAllCalendars(), CONFIG.REFRESH_INTERVAL);
 
 </script>
 </body>
