@@ -539,6 +539,9 @@ function render(allEvents, now) {
   }
   html += '</div>';
   html += `<div class="clock" id="clock">${formatTime(new Date())}</div>`;
+  if (!document.fullscreenElement && !document.webkitFullscreenElement) {
+    html += '<button class="nav-btn nav-btn-fullscreen" onclick="enterFullscreen()">⛶</button>';
+  }
   html += '</div>';
   html += '</div>';
 
@@ -766,6 +769,13 @@ fetchAllCalendars();
 
 // Auto-Refresh: Daten neu laden, Offset beibehalten
 setInterval(() => fetchAllCalendars(), CONFIG.REFRESH_INTERVAL);
+
+// Fullscreen
+function enterFullscreen() {
+  const el = document.documentElement;
+  const rfs = el.requestFullscreen || el.webkitRequestFullscreen || el.mozRequestFullScreen || el.msRequestFullscreen;
+  if (rfs) rfs.call(el).then(() => renderFromCache()).catch(() => {});
+}
 
 // Keep-Alive Audio: verhindert dass Silk Browser nach ~10 Min zum Homescreen zurückkehrt
 // Spielt einen unhörbaren Ton im Hintergrund — signalisiert dem OS dauerhaft Aktivität
