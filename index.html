@@ -539,9 +539,6 @@ function render(allEvents, now) {
   }
   html += '</div>';
   html += `<div class="clock" id="clock">${formatTime(new Date())}</div>`;
-  if (!document.fullscreenElement && !document.webkitFullscreenElement) {
-    html += '<button class="nav-btn nav-btn-fullscreen" onclick="enterFullscreen()">⛶</button>';
-  }
   html += '</div>';
   html += '</div>';
 
@@ -770,22 +767,34 @@ fetchAllCalendars();
 // Auto-Refresh: Daten neu laden, Offset beibehalten
 setInterval(() => fetchAllCalendars(), CONFIG.REFRESH_INTERVAL);
 
-// Fullscreen-Modus: per Button, Antippen irgendwo, oder nach Aktivierung Seite neu rendern
-function enterFullscreen() {
-  const el = document.documentElement;
-  const rfs = el.requestFullscreen || el.webkitRequestFullscreen || el.mozRequestFullScreen || el.msRequestFullscreen;
-  if (rfs) {
-    rfs.call(el).then(() => renderFromCache()).catch(() => {});
+// Keep-Alive Audio: verhindert dass Silk Browser nach ~10 Min zum Homescreen zurückkehrt
+// Spielt einen unhörbaren Ton im Hintergrund — signalisiert dem OS dauerhaft Aktivität
+let keepAliveStarted = false;
+
+function startKeepAlive() {
+  if (keepAliveStarted) return;
+  try {
+    const ctx = new (window.AudioContext || window.webkitAudioContext)();
+    const gain = ctx.createGain();
+    gain.gain.value = 0; // Komplett stumm
+    const osc = ctx.createOscillator();
+    osc.frequency.value = 1; // 1 Hz — völlig unhörbar
+    osc.connect(gain);
+    gain.connect(ctx.destination);
+    osc.start();
+    keepAliveStarted = true;
+    console.log('Keep-alive audio gestartet');
+  } catch(e) {
+    console.warn('Keep-alive audio konnte nicht gestartet werden:', e);
   }
 }
 
-// Beim ersten Antippen irgendwo automatisch Fullscreen aktivieren
-document.addEventListener('touchstart', function onFirstTouch() {
-  if (!document.fullscreenElement && !document.webkitFullscreenElement) {
-    enterFullscreen();
-  }
-  document.removeEventListener('touchstart', onFirstTouch);
-}, { once: true });
+// Versuche direkt beim Laden (klappt manchmal bei stummem Audio)
+setTimeout(startKeepAlive, 500);
+
+// Sicherheits-Fallback: bei erster Interaktion (z.B. Nav-Button tippen)
+document.addEventListener('click', function() { startKeepAlive(); }, { once: true });
+document.addEventListener('touchstart', function() { startKeepAlive(); }, { once: true });
 
 </script>
 </body>
